@@ -1,10 +1,10 @@
-namespace: services
+namespace: service-production
 
 app:
-    name: auth
-    image: git.mos.ru:5050/buch-cloud/mosteam/golang/aispu/auth
-    tag: latest
-    replicas: 5
+  name: web-api
+  image: git.mos.ru:5050/buch-cloud/mosteam/golang/aispu/web-api
+  tag: latest
+  replicas: 5
 
 resources:
     limits:
@@ -20,48 +20,72 @@ annotations:
     prometheus.io/port: 8080
 
 env_data:
-    - name: LOG_LEVEL
-      value: warn
-    - name: APP_NAME
-      value: auth
-    - name: ENVIRONMENT
-      value: prod
-    - name: DEV_MODE
-      value: false
-    - name: SERVICE_HOST
-      value: :8080
-    - name: GRPC_HOST
-      value: 0.0.0.0
-    - name: GRPC_PORT
-      value: 9999
-    - name: EMPLOYEES_ENDPOINT
-      value: employees-services:9999
+  - name: LOG_LEVEL
+    value: info
+  - name: APP_NAME
+    value: web-api
+  - name: ENVIRONMENT
+    value: prod
+  - name: DEV_MODE
+    value: false
+  - name: SERVICE_HOST
+    value: :8080
+  - name: HTTP_HOST
+    value: 0.0.0.0
+  - name: HTTP_PORT
+    value: 80
+  - name: HTTP_EXTERNAL_HOST
+    value: komanda.mos.ru
+  - name: HTTP_SCHEMA
+    value: https
+  - name: WEB_AUTH_REDIRECT_URI
+    value: /redirect
+  - name: PORTALS_ENDPOINT
+    value: portals-services:9999
+  - name: PORTALSV2_ENDPOINT
+    value: portals-v2-services:9999
+  - name: SURVEYS_ENDPOINT # Отсутствует конфигурация ratcher в сервисе surveys (оставил как есть)
+    value: surveys-service-production:9999
+  - name: AUTH_FACADE_ENDPOINT
+    value: auth-facade-services:9999
+  - name: PROXY_FACADE_ENDPOINT
+    value: proxy-facade-services:9999
+  - name: EMPLOYEES_SEARCH_ENDPOINT
+    value: employees-search-services:9999
+  - name: FILES_ENDPOINT
+    value: file-service-services:9999
+  - name: EMPLOYEES_ENDPOINT
+    value: employees-services:9999
+  - name: ANALYTICS_ENDPOINT
+    value: analytics-service-production:9999
+  - name: PORTALS_FACADE_ENDPOINT
+    value: portals-facade-services:9999
+  - name: NEWS_ENDPOINT
+    value: news-services:9999
+  - name: NEWS_FACADE_ENDPOINT
+    value: news-facade-services:9999
+  - name: BANNERS_ENDPOINT
+    value: banners-service:9999
 
 service:
-    name: auth
-    type: ClusterIP
-    ports:
-        - name: service
-          port: 8080
-          protocol: TCP
-          targetPort: 8080
-        - name: grpc
-          port: 9999
-          protocol: TCP
-          targetPort: 9999
+  name: web-api
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    - name: service
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
 
-http_ingress:
-    enabled: true
-    name: http-ingress-auth-production
-    hostname: internal-komanda.mos.local
-    rules:
-        - path: /production/service/auth
-          port: 8080
-
-grpc_ingress:
-    enabled: true
-    name: grpc-ingress-auth-production
-    hostname: internal-komanda.mos.local
-    rules:
-        - path: /production/grpc/auth
-          port: 9999
+ingress:
+  enabled: true
+  name: ingress-web-api-production
+  hostname: komanda.mos.ru
+  rules:
+    - path: /web
+      port: 80
+    - path: /web
+      port: 8080

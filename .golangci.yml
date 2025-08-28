@@ -1,13 +1,12 @@
 run:
     # The default concurrency value is the number of available CPU.
     concurrency: 4
-    allow-parallel-runners: false
-    go: '1.22'
-issues:
-    exclude-dirs:
+    skip-dirs:
         - pkg
         - dev
-    exclude-files:
+    allow-parallel-runners: false
+    go: '1.23'
+    skip-files:
         - '.*_test.go'
 linters:
     enable:

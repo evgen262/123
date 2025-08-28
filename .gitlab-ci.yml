@@ -4,6 +4,10 @@ stages:
     - deploy
     - release
 
+variables:
+    dev_tag: '/^v\d+.\d+.\d+-rc\d+\z/'
+    prod_tag: '/^v\d+.\d+.\d+\z/'
+
 .go:base:
     image: golang:1.23
     before_script:
@@ -20,13 +24,14 @@ stages:
         RELEASE: $CI_COMMIT_REF_NAME
         COMMIT: $CI_COMMIT_SHORT_SHA
     stage: build-docker
-    dependencies: []
-    cache: []
+    dependencies: [ ]
+    cache: [ ]
     only:
         - tags
     except:
         - branches
     script:
+        - cp $ACCESS_LIST $CI_PROJECT_DIR/access-list.json
         - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
         - docker build --no-cache --add-host=git.mos.ru:10.206.168.129 --build-arg GOPROXY_LOGIN=$GOPROXY_LOGIN --build-arg GOPROXY_TOKEN=$GOPROXY_TOKEN --build-arg PROJECT_DIR=$CI_PROJECT_DIR --build-arg RELEASE=$RELEASE --build-arg COMMIT=$COMMIT -t $IMAGE_TAG -f ./Dockerfile .
         - docker push $IMAGE_TAG
@@ -78,7 +83,7 @@ test-coverage:
         - deps
     coverage: '/coverage is enough \d+/'
     script:
-        - bash ./run.sh unit_coverage
+        - ./run.sh unit_coverage
     except:
         - tags
 
@@ -152,7 +157,7 @@ deploy_old_stage:
     script:
         - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
         - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
-        - helm upgrade --create-namespace --install -n service-develop auth ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+        - helm upgrade --create-namespace --install -n service-develop web-api ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
     allow_failure: false
     tags:
         - linux-go-runner-git3010p-1
@@ -170,7 +175,7 @@ deploy_kuber_stage:
     script:
         - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
         - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
-        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-develop auth ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-develop web-api ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
     allow_failure: false
     tags:
         - linux-go-runner-git3010p-1
@@ -181,14 +186,14 @@ deploy_kuber_stage:
     environment: stage
     when: manual
 
-deploy_cube_prod:
+deploy_kuber_prod:
     stage: deploy
     variables:
         GIT_STRATEGY: clone
     script:
         - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
         - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
-        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-production auth ./ci/helm -f ./ci/helm/helm-values-prod.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-production web-api ./ci/helm -f ./ci/helm/helm-values-prod.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
     allow_failure: false
     tags:
         - linux-go-runner-git3010p-1
@@ -207,7 +212,7 @@ deploy_rancher_prod:
     script:
         - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
         - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
-        - helm --kubeconfig=/home/gitlab-runner/.kube/config-rancher upgrade --install -n services auth ./ci/helm -f ./ci/helm/helm-values-rancher.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-rancher upgrade --install -n services web-api ./ci/helm -f ./ci/helm/helm-values-rancher.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
     allow_failure: false
     tags:
         - linux-go-runner-git3010p-1

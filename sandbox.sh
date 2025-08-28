@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-APP_NAME=auth
+APP_NAME=web-api
 
 eval $(minikube -p minikube docker-env)
 docker build --no-cache --build-arg GOPROXY_LOGIN=$GOPROXY_LOGIN --build-arg GOPROXY_TOKEN=$GOPROXY_TOKEN --build-arg RELEASE=sandbox -t $APP_NAME:latest -f ./Dockerfile .

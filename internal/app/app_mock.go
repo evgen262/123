@@ -67,3 +67,41 @@ func (mr *MockServerMockRecorder) Shutdown(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Shutdown", reflect.TypeOf((*MockServer)(nil).Shutdown), ctx)
 }
+
+// MockSync is a mock of Sync interface.
+type MockSync struct {
+	ctrl     *gomock.Controller
+	recorder *MockSyncMockRecorder
+	isgomock struct{}
+}
+
+// MockSyncMockRecorder is the mock recorder for MockSync.
+type MockSyncMockRecorder struct {
+	mock *MockSync
+}
+
+// NewMockSync creates a new mock instance.
+func NewMockSync(ctrl *gomock.Controller) *MockSync {
+	mock := &MockSync{ctrl: ctrl}
+	mock.recorder = &MockSyncMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockSync) EXPECT() *MockSyncMockRecorder {
+	return m.recorder
+}
+
+// Sync mocks base method.
+func (m *MockSync) Sync(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Sync", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Sync indicates an expected call of Sync.
+func (mr *MockSyncMockRecorder) Sync(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Sync", reflect.TypeOf((*MockSync)(nil).Sync), ctx)
+}

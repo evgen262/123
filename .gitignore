@@ -2,7 +2,13 @@
 .bin/
 bin/
 .vscode/
+pkg/
 dev/pgdata/
-dev/redis/data/
+dev/s3data/
+dev/prometheus
+dev/grafana
 cover.html
+*/**/.DS_Store
+.DS_Store
 */**/helm/env-secret-*.yaml
+list.json

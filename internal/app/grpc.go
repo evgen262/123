@@ -10,15 +10,12 @@ import (
 	"google.golang.org/grpc/connectivity"
 )
 
-const (
-	DialTimeout = 10 * time.Second
-)
-
 func (a *app) dial(_ context.Context, target string, required bool, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 	var (
 		cc  *grpc.ClientConn
 		err error
 	)
+
 	cc, err = grpc.NewClient(target, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("can't create client [%s]: %w", target, err)
@@ -28,7 +25,6 @@ func (a *app) dial(_ context.Context, target string, required bool, opts ...grpc
 			_ = cc.Close()
 		}
 	}()
-	grpc.WithDefaultCallOptions()
 	time.AfterFunc(DialTimeout, func() {
 		defer func() {
 			if e := recover(); e != nil {

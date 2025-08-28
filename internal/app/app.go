@@ -2,30 +2,87 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
+	"time"
 
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/cmd/auth/config"
+	metricsv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/analytics/metrics/v1"
+	authv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/authfacade/auth/v1"
+	redirectsessionv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/authfacade/redirectsession/v1"
+	bannersv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/banners/banners/v1"
 	employeev1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/employees/employee/v1"
-	personv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/employees/person/v1"
+	searchv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/employeessearch/search/v1"
+	filev1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/fileservice/file/v1"
+	categoryv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/newsfacade/category/v1"
+	commentsv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/newsfacade/comment/v1"
+	newsv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/newsfacade/news/v1"
+	portalsv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/portals/portals/v1"
+	organizationsv2 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/portalsv2/organizations/v1"
+	portalsv2 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/portalsv2/portals/v1"
+	bannerv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/proxyfacade/banner/v1"
+	eventv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/proxyfacade/event/v1"
+	answerv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/surveys/answer/v1"
+	surveysImagesv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/surveys/image/v1"
+	surveyv1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/surveys/survey/v1"
 	"git.mos.ru/buch-cloud/moscow-team-2.0/build/ditzap.git"
+	timeUtils "git.mos.ru/buch-cloud/moscow-team-2.0/build/time-utils.git"
 	"git.mos.ru/buch-cloud/moscow-team-2.0/build/tree-alive.git"
-	grpcPrometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/redis/go-redis/v9"
+	redisPkg "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	grpcApi "git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/api/grpc"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/api/http/service"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/client/http/kadry"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/client/http/sudir"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/repositories"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/source/cache"
-	"git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/usecase"
+	complexesfacadev1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/portalsfacade/complexes/v1"
+	portalsfacadev1 "git.mos.ru/buch-cloud/moscow-team-2.0/infrastructure/protolib.git/gen/infogorod/portalsfacade/portals/v1"
+
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/cmd/web-api/config"
+	httpApi "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/api/http"
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/api/http/service"
+	grpcClient "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc"
+	mapperAnalytics "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/analytics"
+	mapperAuth "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/auth"
+	mapperBanners "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/banners"
+	mapperEmployees "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/employees"
+	mapperEmployeesSearch "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/employees-search"
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/files"
+	mapperNews "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/news"
+	mapperPortals "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/portals"
+	mapperPortalsV2 "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/portalsv2"
+	mapperProxy "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/proxy"
+	mapperSurveys "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/client/grpc/surveys"
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/entity"
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/entity/auth"
+	repositoryAnalytics "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/analytics"
+	repositoriesAuth "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/auth"
+	repositoryBanners "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/banners"
+	repositoryEmployees "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/employees"
+	repositoriesEmployeesSearch "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/employees-search"
+	repositoryFiles "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/files"
+	repositoryNews "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/news"
+	repositoriesPortal "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/portal"
+	repositoryPortalsv2 "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/portalsv2"
+	repositoryProxy "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/proxy"
+	repositoriesSurvey "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/repositories/survey"
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/analytics"
+	usecaseAuth "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/auth"
+	usecaseBanners "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/banners"
+	usecaseEmployees "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/employees"
+	usecaseEmployeesSearch "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/employees-search"
+	usesaceFIles "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/files"
+	usecaseNews "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/news"
+	usecasePortalsv2 "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/portalsv2"
+	usecaseProxy "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/proxy"
+	usecaseSurveys "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/surveys"
+	usecaseUsers "git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/usecase/users"
 )
 
 type Environment string
@@ -33,6 +90,9 @@ type Environment string
 const (
 	EnvironmentDevelop Environment = "develop"
 	EnvironmentProd    Environment = "prod"
+)
+const (
+	DialTimeout = 10 * time.Second
 )
 
 type AppInfo struct {
@@ -50,13 +110,13 @@ func (ai AppInfo) GetReleaseVersion() string {
 var ApplicationInfo *AppInfo
 
 type app struct {
-	tree              tree.Tree
 	config            *config.Config
 	serviceHTTPServer Server
-	grpcServer        Server
-	redisClient       cache.Redis
-	logger            ditzap.Logger
+	httpServer        Server
+	redisClient       redisPkg.UniversalClient
+	tree              tree.Tree
 	stop              context.CancelFunc
+	logger            ditzap.Logger
 }
 
 func NewApp(cfg *config.Config, appInfo *AppInfo, logger ditzap.Logger) *app {
@@ -67,24 +127,21 @@ func NewApp(cfg *config.Config, appInfo *AppInfo, logger ditzap.Logger) *app {
 	}
 }
 
+//nolint:funlen
 func (a *app) Run(ctx context.Context) {
 	appCtx, cancelApp := context.WithCancel(ctx)
 	a.stop = cancelApp
-	defer func() {
-		if e := recover(); e != nil {
-			a.logger.Error("application shutdown", zap.Error(fmt.Errorf("%s", e)))
-			cancelApp()
-		}
-	}()
 	// AfterFunc-функция при завершении контекста для graceful shutdown
 	context.AfterFunc(appCtx, func() {
 		defer func() {
 			if e := recover(); e != nil {
 				a.logger.Error("context after-func", zap.Error(fmt.Errorf("%s", e)))
-				cancelApp()
+			}
+
+			if gErr := a.GracefulShutdown(appCtx); gErr != nil {
+				a.logger.Error("can't graceful shutdown", zap.Error(gErr))
 			}
 		}()
-		a.contextCancelFunc(appCtx)
 	})
 
 	environment := EnvironmentDevelop
@@ -93,106 +150,217 @@ func (a *app) Run(ctx context.Context) {
 	}
 	ApplicationInfo.Instance = environment
 
-	employeesConn, err := a.connectToProviders(ctx, a.config.Endpoints)
-	if err != nil {
-		a.logger.Error("connect to providers error", zap.Error(err))
-	}
-
-	employeesClient := employeev1.NewEmployeesAPIClient(employeesConn)
-	personClient := personv1.NewPersonAPIClient(employeesConn)
-
-	sudirClient := sudir.NewClient(
-		a.config.OAuth.URL,
-		a.config.OAuth.ClientID,
-		a.config.OAuth.ClientSecret,
-		a.logger,
-	)
-
-	kadryClient := kadry.NewClient(
-		a.config.SKS.URL,
-		a.config.SKS.SubscriberID,
-		a.config.SKS.Secret,
-		a.config.SKS.UserID,
-		a.logger,
-	)
-
-	a.redisClient = redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", a.config.Redis.Host, a.config.Redis.Port),
-		Username: a.config.Redis.Username,
-		Password: a.config.Redis.Password,
-		DB:       a.config.Redis.DB,
-	})
-
-	cacheSource := cache.NewCacheSource(a.redisClient)
-
-	stateRepository := repositories.NewStateRepository(a.config.Redis.Prefix, cacheSource, a.logger)
-	tokenRepository := repositories.NewTokenRepository(a.config.Redis.Prefix, cacheSource, a.logger)
-	employeeRepository := repositories.NewEmployeeRepository(
-		a.config.Redis.Prefix,
-		cacheSource,
-		employeesClient,
-		personClient,
-		a.logger,
-	)
-
-	authUseCase := usecase.NewAuthUseCase(
-		sudirClient,
-		kadryClient,
-		stateRepository,
-		tokenRepository,
-		employeeRepository,
-		a.logger,
-	)
-
 	a.tree = tree.NewTree()
 	a.tree.Alive()
 
-	a.initMetrics()
-
 	wg := &sync.WaitGroup{}
-
-	// старт сервисного сервера
 	wg.Add(1)
 	serviceHttpBranch := a.tree.GrowBranch("service-http-server")
 	go a.startServiceServer(appCtx, serviceHttpBranch, wg)
 
-	// Старт GRPC-сервера
+	tu := timeUtils.NewTimeUtils()
+
+	var accessList auth.AccessList
+	if strings.TrimSpace(a.config.AccessListFile) != "" {
+		var alErr error
+		accessList, alErr = a.readAccessList()
+		if alErr != nil {
+			return
+		}
+		httpApi.SharedFields.AccessList = accessList
+	}
+
+	// Подключение к зависимым gRPC-сервисам
+	portalsConn,
+		portalsv2Conn,
+		surveysConn,
+		authConn,
+		proxyConn,
+		employeesSearchConn,
+		filesConn,
+		employeesConn,
+		analyticsConn,
+		portalsFacadeConn,
+		newsConn,
+		bannersConn,
+		err := a.connectToProviders(appCtx, a.config.Endpoints)
+	if err != nil {
+		a.logger.Error("can't connection to providers", zap.Error(err))
+		return
+	}
+
+	// Клиенты
+	portalsAPIClient := portalsv1.NewPortalsAPIClient(portalsConn)
+	portalsv2APIClient := portalsv2.NewPortalsAPIClient(portalsv2Conn)
+	organizationsv2APIClient := organizationsv2.NewOrganizationsAPIClient(portalsv2Conn)
+	portalsfacadeAPIClient := portalsfacadev1.NewPortalsAPIClient(portalsFacadeConn)
+	complexesfacadeAPIClient := complexesfacadev1.NewComplexesAPIClient(portalsFacadeConn)
+
+	filesAPIClient := filev1.NewFileAPIClient(filesConn)
+
+	surveysAPIClient := surveyv1.NewSurveyAPIClient(surveysConn)
+	surveysAnswersAPIClient := answerv1.NewAnswerAPIClient(surveysConn)
+	surveysImagesAPIClient := surveysImagesv1.NewImageAPIClient(surveysConn)
+
+	authAPIClient := authv1.NewAuthAPIClient(authConn)
+
+	bannerAPIClient := bannerv1.NewBannerAPIClient(proxyConn)
+	eventsAPIClient := eventv1.NewEventAPIClient(proxyConn)
+
+	redirectSessionAPIClient := redirectsessionv1.NewRedirectSessionAPIClient(authConn)
+
+	employeesSearchSearchAPIClient := searchv1.NewSearchAPIClient(employeesSearchConn)
+
+	employeesAPIClient := employeev1.NewEmployeesAPIClient(employeesConn)
+
+	metricsAPIClient := metricsv1.NewMetricsAPIClient(analyticsConn)
+
+	newsCategoryAPIClient := categoryv1.NewCategoryAPIClient(newsConn)
+	newsAPIClient := newsv1.NewNewsAPIClient(newsConn)
+	commentsAPIClient := commentsv1.NewCommentAPIClient(newsConn)
+
+	bannersAPIClient := bannersv1.NewBannersAPIClient(bannersConn)
+
+	// Мапперы
+	sharedMapper := grpcClient.NewSharedMapper(tu)
+	portalsMapper := mapperPortals.NewPortalsMapper(tu)
+
+	surveysMapper := mapperSurveys.NewSurveyMapper(tu)
+	surveysAnswersMapper := mapperSurveys.NewAnswerMapper()
+	surveysImagesMapper := mapperSurveys.NewImageMapper()
+
+	authMapper := mapperAuth.NewAuthMapper(tu)
+	redirectSessionMapper := mapperAuth.NewRedirectSessionMapper()
+
+	proxyMapper := mapperProxy.NewProxyMapper()
+
+	employeesMapper := mapperEmployees.NewMapperEmployees(tu)
+	employeesSearchMapper := mapperEmployeesSearch.NewEmployeesSearchMapper()
+
+	newsMapper := mapperNews.NewNewsMapper(sharedMapper)
+	commentsMapper := mapperNews.NewCommentsMapper(sharedMapper)
+
+	filesMapper := files.NewFileMapper()
+	visitorMapper := files.NewVisitorMapper()
+
+	bannersMapper := mapperBanners.NewBannersMapper(tu, sharedMapper)
+
+	// Репозитории
+	portalsPortalRepository := repositoriesPortal.NewPortalsRepository(portalsAPIClient, portalsMapper)
+
+	surveysRepository := repositoriesSurvey.NewSurveyRepository(surveysAPIClient, surveysMapper)
+	surveysAnswersRepository := repositoriesSurvey.NewAnswerRepository(surveysAnswersAPIClient, surveysAnswersMapper)
+	surveysImagesRepository := repositoriesSurvey.NewImageRepository(surveysImagesAPIClient, surveysImagesMapper)
+
+	employeesRepository := repositoryEmployees.NewEmployeesRepository(employeesAPIClient, employeesMapper, tu, a.logger)
+	employeesSearchRepository := repositoriesEmployeesSearch.NewEmployeesSearchRepository(employeesSearchSearchAPIClient, employeesSearchMapper, tu, a.logger)
+
+	callbackURL, err := url.Parse(a.config.WebAuthURL)
+	if err != nil {
+		a.logger.Error("can't parse WEB_AUTH_URL parameter", zap.String("url", a.config.WebAuthURL), zap.Error(err))
+		return
+	}
+	authRepository := repositoriesAuth.NewAuthRepository(authAPIClient, authMapper, *callbackURL, a.config.AppName, a.config.TTL.AccessToken, a.config.TTL.RefreshToken, tu, a.logger)
+	redirectSessionRepository := repositoriesAuth.NewRedirectSessionRepository(redirectSessionAPIClient, redirectSessionMapper, a.logger)
+
+	proxyRepository := repositoryProxy.NewProxyRepository(bannerAPIClient, eventsAPIClient, proxyMapper, a.logger)
+
+	filesRepository := repositoryFiles.NewFileRepository(filesAPIClient, filesMapper, visitorMapper)
+
+	analyticsRepository := repositoryAnalytics.NewAnalyticsRepository(metricsAPIClient, mapperAnalytics.NewMetricsMapper())
+
+	// TODO: Переименовать, когшда будет убираться portals v1
+	portalsFacadePortalRepository := repositoryPortalsv2.NewPortalsRepository(portalsfacadeAPIClient, mapperPortalsV2.NewPortalsMapper(tu))
+	portalsFacadeComplexesRepository := repositoryPortalsv2.NewComplexesRepository(complexesfacadeAPIClient, mapperPortalsV2.NewComplexesMapper(tu))
+
+	newsCategoryRepository := repositoryNews.NewCategoryRepository(newsCategoryAPIClient, sharedMapper)
+	newsRepository := repositoryNews.NewNewsRepository(newsAPIClient, portalsv2APIClient, organizationsv2APIClient, newsMapper, sharedMapper, a.logger)
+	bannersRepository := repositoryBanners.NewBannersRepository(bannersAPIClient, bannersMapper, a.logger)
+	commentsRepository := repositoryNews.NewCommentsRepository(commentsAPIClient, commentsMapper, newsMapper)
+
+	// Интеракторы
+	portalsV2Interactor := usecasePortalsv2.NewPortalsUseCase(portalsFacadePortalRepository)
+	complexesV2Interactor := usecasePortalsv2.NewComplexesUseCase(portalsFacadeComplexesRepository)
+
+	surveysInteractor := usecaseSurveys.NewSurveysUseCase(surveysRepository)
+	surveysAnswersInteractor := usecaseSurveys.NewAnswersUseCase(surveysAnswersRepository)
+	surveysImagesInteractor := usecaseSurveys.NewImagesUseCase(surveysImagesRepository)
+
+	authInteractor := usecaseAuth.NewAuthUseCase(authRepository, a.logger, accessList)
+	redirectSessionInteractor := usecaseAuth.NewRedirectSessionInteractor(redirectSessionRepository, a.config.WebAuthRedirectURI)
+
+	proxyInteractor := usecaseProxy.NewProxyInteractor(proxyRepository)
+
+	employeesInteractor := usecaseEmployees.NewEmployeesInteractor(employeesRepository, portalsPortalRepository, a.logger)
+	employeesSearchInteractor := usecaseEmployeesSearch.NewEmployeesSearchInteractor(employeesSearchRepository, tu)
+
+	usersInteractor := usecaseUsers.NewUsersInteractor(employeesRepository, a.logger)
+
+	filesInteractor := usesaceFIles.NewFileUsecase(filesRepository, a.logger)
+
+	analyticsInteractor := analytics.NewAnalyticsInteractor(analyticsRepository, a.logger)
+
+	newsCategoryInteractor := usecaseNews.NewCategoryInteractor(newsCategoryRepository, employeesRepository, a.logger)
+	newsAdminInteractor := usecaseNews.NewNewsAdminInteractor(newsRepository, employeesRepository, a.logger)
+
+	newsInteractor := usecaseNews.NewNewsInteractor(newsRepository, employeesRepository, a.logger)
+	newsCommentsInteractor := usecaseNews.NewCommentInteractor(commentsRepository, employeesRepository, a.logger)
+
+	bannersInteractor := usecaseBanners.NewBannersInteractor(bannersRepository, a.logger)
+
+	// Старт HTTP-сервера
 	wg.Add(1)
-	grpcBranch := a.tree.GrowBranch("grpc-server")
-	go a.startGRPCServer(
+	httpBranch := a.tree.GrowBranch("http-server")
+	go a.startHTTPServer(
 		appCtx,
-		grpcBranch,
+		httpBranch,
 		wg,
-		authUseCase,
+		portalsV2Interactor,
+		complexesV2Interactor,
+		surveysInteractor,
+		surveysAnswersInteractor,
+		surveysImagesInteractor,
+		authInteractor,
+		proxyInteractor,
+		redirectSessionInteractor,
+		employeesSearchInteractor,
+		usersInteractor,
+		filesInteractor,
+		employeesInteractor,
+		analyticsInteractor,
+		newsCategoryInteractor,
+		newsAdminInteractor,
+		newsCommentsInteractor,
+		newsInteractor,
+		bannersInteractor,
 	)
 
 	a.tree.Ready()
 	wg.Wait()
 }
 
-// GracefulShutdown graceful shutdown приложения.
+// GracefulShutdown graceful shutdown приложения
 func (a *app) GracefulShutdown(c context.Context) (err error) {
 	ctx := context.WithoutCancel(c)
 	if a.tree != nil {
 		a.tree.Die()
 	}
-
+	if a.httpServer != nil {
+		httpErr := a.httpServer.Shutdown(ctx)
+		if httpErr != nil {
+			err = errors.Join(err, fmt.Errorf("can't shutdown http-server: %w", httpErr))
+		}
+	}
 	if a.serviceHTTPServer != nil {
-		if srvErr := a.serviceHTTPServer.Shutdown(ctx); srvErr != nil {
-			err = errors.Join(err, fmt.Errorf("can't shutdown service server: %w", srvErr))
+		serviceErr := a.serviceHTTPServer.Shutdown(ctx)
+		if serviceErr != nil {
+			err = errors.Join(err, fmt.Errorf("can't shutdown service http-server: %w", serviceErr))
 		}
 	}
-
-	if a.grpcServer != nil {
-		grpcErr := a.grpcServer.Shutdown(ctx)
-		if grpcErr != nil {
-			err = errors.Join(err, fmt.Errorf("can't shutdown grpc-server: %w", grpcErr))
-		}
-	}
-
 	if a.redisClient != nil {
-		if redisErr := a.redisClient.Close(); redisErr != nil {
-			err = errors.Join(err, fmt.Errorf("can't close redis connection: %w", redisErr))
+		status := a.redisClient.Shutdown(ctx)
+		if status.Err() != nil {
+			err = errors.Join(err, fmt.Errorf("can't shutdown service redis: %w", status.Err()))
 		}
 	}
 	return
@@ -205,28 +373,107 @@ func (a *app) contextCancelFunc(ctx context.Context) {
 	}
 }
 
-func (a *app) connectToProviders(ctx context.Context, endpoints config.Endpoints) (
+func (a *app) connectToProviders(
+	ctx context.Context,
+	endpoints *config.Endpoints,
+) (
+	portalsConn *grpc.ClientConn,
+	portalsV2Conn *grpc.ClientConn,
+	surveysConn *grpc.ClientConn,
+	authConn *grpc.ClientConn,
+	proxyConn *grpc.ClientConn,
+	employeesSearchConn *grpc.ClientConn,
+	filesConn *grpc.ClientConn,
 	employeesConn *grpc.ClientConn,
+	analyticsConn *grpc.ClientConn,
+	portalsFacadeConn *grpc.ClientConn,
+	newsConn *grpc.ClientConn,
+	bannersConn *grpc.ClientConn,
 	err error,
 ) {
 	var (
 		dialErr error
 	)
-	grpcPrometheus.EnableClientHandlingTimeHistogram()
-
+	grpc_prometheus.EnableClientHandlingTimeHistogram()
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(grpc_prometheus.UnaryClientInterceptor)),
+		grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient(grpc_prometheus.StreamClientInterceptor)),
 	}
 
-	// Инициализация подключения к сервису employees
-	employeesConn, dialErr = a.dial(
-		ctx,
-		endpoints.EmployeesEndpoint,
-		false,
-		dialOpts...,
-	)
+	// Инициализация подключения к сервису portal
+	portalsConn, dialErr = a.dial(ctx, endpoints.PortalsEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to posrtals service: %w", dialErr)
+		return
+	}
+
+	// Инициализация подключения к сервису portal v2
+	portalsV2Conn, dialErr = a.dial(ctx, endpoints.PortalsV2Endpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to posrtals v2 service: %w", dialErr)
+		return
+	}
+
+	// Инициализация подключения к сервису survey
+	surveysConn, dialErr = a.dial(ctx, endpoints.SurveysEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to surveys service: %w", dialErr)
+		return
+	}
+
+	// Инициализация подключения к сервису auth-facade
+	authConn, dialErr = a.dial(ctx, endpoints.AuthFacadeEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to auth-facade service: %w", dialErr)
+		return
+	}
+
+	proxyConn, dialErr = a.dial(ctx, endpoints.ProxyFacadeEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to banners service: %w", dialErr)
+		return
+	}
+
+	employeesSearchConn, dialErr = a.dial(ctx, endpoints.EmployeesSearchEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to employees-search service: %w", dialErr)
+		return
+	}
+
+	filesConn, dialErr = a.dial(ctx, endpoints.FilesEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to files service: %w", dialErr)
+		return
+	}
+
+	employeesConn, dialErr = a.dial(ctx, endpoints.EmployeesEndpoint, false, dialOpts...)
 	if dialErr != nil {
 		err = fmt.Errorf("can't connect to employees service: %w", dialErr)
+		return
+	}
+
+	analyticsConn, dialErr = a.dial(ctx, endpoints.AnalyticsEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to analytics service: %w", dialErr)
+		return
+	}
+
+	portalsFacadeConn, dialErr = a.dial(ctx, endpoints.PortalsFacadeEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to portals-facade service: %w", dialErr)
+		return
+	}
+
+	newsConn, dialErr = a.dial(ctx, endpoints.NewsFacadeEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to news service: %w", dialErr)
+		return
+	}
+
+	bannersConn, dialErr = a.dial(ctx, endpoints.BannersEndpoint, false, dialOpts...)
+	if dialErr != nil {
+		err = fmt.Errorf("can't connect to banners service: %w", dialErr)
 		return
 	}
 
@@ -235,8 +482,8 @@ func (a *app) connectToProviders(ctx context.Context, endpoints config.Endpoints
 
 func (a *app) initMetrics() {
 	// Добавление префикса к метрикам
-	appName := strings.Replace(ApplicationInfo.Name, "-", "_", -1)
-	metricRegisterer := prometheus.WrapRegistererWithPrefix(appName+"_", prometheus.DefaultRegisterer)
+	appNamePrefix := strings.ReplaceAll(ApplicationInfo.Name, "-", "_")
+	metricRegisterer := prometheus.WrapRegistererWithPrefix(appNamePrefix+"_", prometheus.DefaultRegisterer)
 	prometheus.DefaultRegisterer = metricRegisterer
 	if gather, ok := metricRegisterer.(prometheus.Gatherer); ok {
 		prometheus.DefaultGatherer = gather
@@ -247,7 +494,7 @@ func (a *app) startServiceServer(c context.Context, serviceHttpBranch tree.Branc
 	ctx, serverCancel := context.WithCancel(c)
 	defer func() {
 		if e := recover(); e != nil {
-			a.logger.Error("service http start panic", zap.Error(fmt.Errorf("%s", e)))
+			a.logger.Panic("service http start panic", zap.Error(fmt.Errorf("%s", e)))
 		}
 		serviceHttpBranch.Die()
 		serverCancel()
@@ -260,39 +507,124 @@ func (a *app) startServiceServer(c context.Context, serviceHttpBranch tree.Branc
 		Commit:    ApplicationInfo.Commit,
 		Release:   ApplicationInfo.Release,
 	})
-	err := a.serviceHTTPServer.Run(context.WithValue(ctx, service.ContextKeyServiceAddr, a.config.ServiceHTTPHost)) //nolint:staticcheck
+	err := a.serviceHTTPServer.Run(
+		context.WithValue(ctx, &service.ContextKeyServiceAddr, entity.MakeContextStringValue(a.config.ServiceHTTPHost)), //nolint:staticcheck
+	)
 	// Отменяем контекст, если HTTP-сервер завершил работу
 	if err != nil {
 		a.logger.Error("service http server is shutdown", zap.Error(err))
 	}
 }
 
-func (a *app) startGRPCServer(
+//nolint:funlen
+func (a *app) startHTTPServer(
 	c context.Context,
-	grpcBranch tree.Branch,
+	httpBranch tree.Branch,
 	wg *sync.WaitGroup,
-	authInteractor grpcApi.AuthInteractor,
+	portalsV2Interactor httpApi.PortalsV2Interactor,
+	complexesV2Interactor httpApi.ComplexesV2Interactor,
+	surveysInteractor httpApi.SurveysSurveysInteractor,
+	surveysAnswersInteractor httpApi.SurveysAnswersInteractor,
+	surveysImagesInteractor httpApi.SurveysImagesInteractor,
+	authInteractor httpApi.AuthInteractor,
+	proxyInteractor httpApi.ProxyInteractor,
+	redirectSessionInteractor httpApi.RedirectSessionInteractor,
+	employeesSearchesInteractor httpApi.EmployeesSearchUseCases,
+	usersInteractor httpApi.UsersInteractor,
+	filesInteractor httpApi.FilesInteractor,
+	employeesInteractor httpApi.EmployeesUseCases,
+	analyticsInteractor httpApi.AnalyticsInteractor,
+	newsCategoryInteractor httpApi.NewsCategoryInteractor,
+	newsAdminInteractor httpApi.NewsAdminInteractor,
+	newsCommentsInteractor httpApi.NewsCommentsInteractor,
+	newsInteractor httpApi.NewsInteractor,
+	bannersInteractor httpApi.BannersInteractor,
 ) {
 	ctx, serverCancel := context.WithCancel(c)
 	defer func() {
 		if e := recover(); e != nil {
-			a.logger.Error("grpc start panic", zap.Error(fmt.Errorf("%s", e)))
+			a.logger.Error("http start panic", zap.Error(fmt.Errorf("%s", e)))
 		}
-		grpcBranch.Die()
-		// Отменяем контекст, если GRPC-сервер завершил работу
+		httpBranch.Die()
+		// Отменяем контекст, если HTTP-сервер завершил работу
 		serverCancel()
 		wg.Done()
 	}()
 
-	addr := fmt.Sprintf("%s:%d", a.config.GrpcServer.Host, a.config.GrpcServer.Port)
-	s := grpcApi.NewServer(addr, grpcBranch, a.logger)
+	// Заполняем переменные для http-роутов
+	httpApi.SharedFields.AllowOrigins = strings.Split(a.config.HttpServer.AllowOrigins, ",")
+	httpApi.SharedFields.ExternalHost = a.config.HttpServer.ExternalHost
 
-	// Регистрация серверов gRPC-сервисов
-	s.RegisterServers(authInteractor)
-	a.grpcServer = s
-	err := s.Run(ctx)
-	if err != nil {
-		a.logger.Error("grpc server is shutdown", zap.Error(err))
+	addr := fmt.Sprintf("%s:%d", a.config.HttpServer.Host, a.config.HttpServer.Port)
+	var servEnvironment httpApi.Environment
+	switch ApplicationInfo.Instance {
+	case EnvironmentDevelop:
+		servEnvironment = httpApi.EnvironmentDevelop
+	case EnvironmentProd:
+		servEnvironment = httpApi.EnvironmentProd
+	}
+	if a.config.DevMode {
+		servEnvironment = httpApi.EnvironmentDebug
+	}
+	middlewareOptions := []*httpApi.MiddlewareOption{
+		{
+			Name:  "apiKey",
+			Value: a.config.ApiKey,
+		},
+	}
+	a.httpServer = httpApi.
+		NewServer(addr, a.logger, servEnvironment, httpBranch).
+		InitRouter(
+			a.config.Path.UploadPath,
+			portalsV2Interactor,
+			complexesV2Interactor,
+			surveysInteractor,
+			surveysAnswersInteractor,
+			surveysImagesInteractor,
+			authInteractor,
+			proxyInteractor,
+			redirectSessionInteractor,
+			employeesSearchesInteractor,
+			usersInteractor,
+			filesInteractor,
+			employeesInteractor,
+			analyticsInteractor,
+			newsCategoryInteractor,
+			newsAdminInteractor,
+			newsInteractor,
+			newsCommentsInteractor,
+			bannersInteractor,
+			middlewareOptions...,
+		)
+	if a.httpServer == nil {
+		a.logger.Error("can't create http server")
 		return
 	}
+
+	if err := a.httpServer.Run(ctx); err != nil {
+		a.logger.Error("http server is shutdown", zap.Error(err))
+		return
+	}
+}
+
+func (a *app) readAccessList() (auth.AccessList, error) {
+	accessList := make(auth.AccessList, 0)
+	file, err := os.Open(a.config.AccessListFile)
+	if err != nil {
+		a.logger.Error("can't open access list file", zap.Error(err))
+		return nil, fmt.Errorf("can't open access list file")
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		a.logger.Error("can't read access list file", zap.Error(err))
+		return nil, fmt.Errorf("can't read access list file")
+	}
+	err = json.Unmarshal(data, &accessList)
+	if err != nil && !errors.Is(err, io.EOF) {
+		a.logger.Error("can't unmarshal access list file", zap.Error(err))
+		return nil, fmt.Errorf("can't unmarshal access list file")
+	}
+	return accessList, nil
 }

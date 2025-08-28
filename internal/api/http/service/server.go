@@ -10,14 +10,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+
+	"git.mos.ru/buch-cloud/moscow-team-2.0/backend/web-api.git/internal/entity"
 )
 
 //go:generate mockgen -source=server.go -destination=./service_mock.go -package=service
 
-const RequestTimeout = 3600 * time.Second
+const RequestTimeout = 30 * time.Second
 
-const (
-	ContextKeyServiceAddr = "service-addr"
+var (
+	ContextKeyServiceAddr entity.ContextKey = "service-addr"
 )
 
 type HTTPSrv interface {
@@ -84,12 +86,12 @@ func NewServer(treeBranch tree.Branch, appInfo *AppInfo) *server {
 }
 
 func (s *server) Run(ctx context.Context) error {
-	addr, ok := ctx.Value(ContextKeyServiceAddr).(string)
+	addr, ok := ctx.Value(&ContextKeyServiceAddr).(entity.ContextStringValue)
 	if !ok {
 		return fmt.Errorf("service addr not a string: %+v", addr)
 	}
 	s.branch.Ready()
-	if err := s.server.ListenAndServe(addr); err != nil {
+	if err := s.server.ListenAndServe(addr.String()); err != nil {
 		return fmt.Errorf("can't start service http server: %w", err)
 	}
 	return nil
@@ -97,5 +99,8 @@ func (s *server) Run(ctx context.Context) error {
 
 func (s *server) Shutdown(ctx context.Context) error {
 	defer s.branch.Die()
-	return s.server.ShutdownWithContext(ctx)
+	if err := s.server.ShutdownWithContext(ctx); err != nil {
+		return fmt.Errorf("can't shutdown service http: %w", err)
+	}
+	return nil
 }

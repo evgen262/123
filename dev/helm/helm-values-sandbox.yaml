@@ -1,8 +1,8 @@
 namespace: sandbox
 
 app:
-  name: auth
-  image: auth
+  name: web-api
+  image: web-api
   tag: latest
   replicas: 1
 
@@ -15,52 +15,66 @@ resources:
     memory: "250Mi"
 
 env_data:
-    - name: LOG_LEVEL
-      value: debug
-    - name: APP_NAME
-      value: auth
-    - name: ENVIRONMENT
-      value: develop
-    - name: DEV_MODE
-      value: true
-    - name: SERVICE_HOST
-      value: 0.0.0.0:8080
-    - name: GRPC_HOST
-      value: 0.0.0.0
-    - name: GRPC_PORT
-      value: 9999
-    - name: REDIS_PORT
-      value: 6379
-    - name: REDIS_DB
-      value: 1
-    - name: EMPLOYEES_ENDPOINT
-      value: employees-sandbox:9999
+  - name: LOG_LEVEL
+    value: debug
+  - name: APP_NAME
+    value: web-api
+  - name: ENVIRONMENT
+    value: develop
+  - name: DEV_MODE
+    value: true
+  - name: SERVICE_HOST
+    value: :8080
+  - name: HTTP_HOST
+    value: 0.0.0.0
+  - name: HTTP_PORT
+    value: 80
+  - name: HTTP_EXTERNAL_HOST
+    value: develop-komanda.mos.ru
+  - name: HTTP_SCHEMA
+    value: https
+  - name: WEB_AUTH_REDIRECT_URI
+    value: /redirect
+  - name: PORTALS_ENDPOINT
+    value: portals-sandbox:9999
+  - name: SURVEYS_ENDPOINT
+    value: surveys-sandbox:9999
+  - name: AUTH_FACADE_ENDPOINT
+    value: auth-facade-sandbox:9999
+  - name: PROXY_FACADE_ENDPOINT
+    value: banners-sandbox:9999
+  - name: PROXY_FACADE_ENDPOINT
+    value: proxy-facade-sandbox:9999
+  - name: EMPLOYEES_SEARCH_ENDPOINT
+    value: employees-search-sandbox:9999
+  - name: FILES_ENDPOINT
+    value: files-sandbox:9999
+  - name: ANALYTICS_ENDPOINT
+    value: analytics-sandbox:9999
+  - name: NEWS_ENDPOINT
+    value: news-sandbox:9999
+  - name: NEWS_FACADE_ENDPOINT
+    value: news-facade-sandbox:9999
 
 service:
-  name: auth
+  name: web-api
   type: ClusterIP
   ports:
-      - name: service
-        port: 8080
-        protocol: TCP
-        targetPort: 8080
-      - name: grpc
-        port: 9999
-        protocol: TCP
-        targetPort: 9999
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    - name: service
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
 
 ingress:
-    enabled: true
-    name: ingress-auth-sandbox
-    hostname: sandbox-komanda.local
-    rules:
-        - path: /sandbox/service/auth
-          port: 8080
-
-ingress_grpc:
-    enabled: true
-    name: ingress-grpc-auth-sandbox
-    hostname: sandbox-komanda.local
-    rules:
-        - path: /sandbox/grpc/auth
-          port: 9999
+  enabled: true
+  name: ingress-web-api-sandbox
+  hostname: sandbox-komanda.local
+  rules:
+    - path: /web
+      port: 80
+    - path: /sandbox/service/web
+      port: 8080
