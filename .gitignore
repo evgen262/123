@@ -1,0 +1,8 @@
+.idea/
+.bin/
+bin/
+.vscode/
+dev/pgdata/
+dev/redis/data/
+cover.html
+*/**/helm/env-secret-*.yaml

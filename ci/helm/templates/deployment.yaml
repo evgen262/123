@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.name }}-deployment
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        checksum/{{ .Values.app.name }}-secret1: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.annotations }}
+        {{- with .Values.annotations }}
+        {{- range $key, $value := . }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+      labels:
+        app: {{ .Release.Name }}
+        tier: backend
+    spec:
+      containers:
+        - name: {{ .Values.app.name }}-container
+          image: {{ .Values.app.image }}:{{ .Values.app.tag }}
+          ports:
+            {{- range .Values.service.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .port }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: service
+            initialDelaySeconds: 3
+            periodSeconds: 3
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: service
+            failureThreshold: 30
+            periodSeconds: 10
+          envFrom:
+          - secretRef:
+              name: {{ .Values.app.name }}-env-secret
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+              cpu: {{ .Values.resources.limits.cpu }}
+
+      imagePullSecrets:
+      - name: regcred
+      - name: regcred-mosgit

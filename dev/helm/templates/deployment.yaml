@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.name }}-deployment
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+      tier: backend
+  template:
+    metadata:
+      annotations:
+        checksum/{{ .Values.app.name }}-secret1: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        app: {{ .Release.Name }}
+        tier: backend
+    spec:
+      containers:
+        - name: {{ .Values.app.name }}-container
+          image: {{ .Values.app.image }}:{{ .Values.app.tag }}
+          ports:
+            {{- range .Values.service.ports }}
+            - name: {{ .name }}
+              containerPort: {{ .port }}
+            {{- end }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+          - secretRef:
+              name: {{ .Values.app.name }}-env-secret
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+              cpu: {{ .Values.resources.limits.cpu }}

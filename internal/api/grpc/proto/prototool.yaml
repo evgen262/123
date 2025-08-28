@@ -1,0 +1,21 @@
+protoc:
+  version: 3.21.12
+lint:
+  group: uber2
+  rules:
+      remove:
+          - NAMES_NO_UUID
+generate:
+  go_options:
+    import_path: git.mos.ru/buch-cloud/moscow-team-2.0/pud/auth.git/internal/api/grpc/proto
+  plugins:
+    - name: go
+      type: go
+      output: ../gen
+    - name: go-grpc
+      type: go
+      output: ../gen
+    - name: validate
+      type: go
+      flags: lang=go
+      output: ../gen

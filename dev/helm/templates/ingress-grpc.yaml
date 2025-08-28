@@ -1,0 +1,30 @@
+{{- if .Values.ingress_grpc.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.ingress_grpc.name }}
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+    - host: {{ .Values.ingress_grpc.hostname }}
+      http:
+        paths:
+          {{- range .Values.ingress_grpc.rules }}
+            - backend:
+                  service:
+                      name: {{ $.Values.service.name }}-{{ $.Values.namespace}}
+                      port:
+                          number: {{ .port }}
+              path: {{ .path }}(/|$)(.*)
+              pathType: ImplementationSpecific
+          {{- end}}
+{{- end }}

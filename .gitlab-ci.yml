@@ -1,0 +1,220 @@
+stages:
+    - test
+    - docker
+    - deploy
+    - release
+
+.go:base:
+    image: golang:1.23
+    before_script:
+        - go env -w GOMODCACHE=$CI_PROJECT_DIR/pkg
+        - chmod +x ./run.sh
+        - ./run.sh set_private_repo
+    tags:
+        - docker-go-runner
+
+.build-docker:base:
+    variables:
+        IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+        GIT_STRATEGY: clone
+        RELEASE: $CI_COMMIT_REF_NAME
+        COMMIT: $CI_COMMIT_SHORT_SHA
+    stage: build-docker
+    dependencies: []
+    cache: []
+    only:
+        - tags
+    except:
+        - branches
+    script:
+        - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+        - docker build --no-cache --add-host=git.mos.ru:10.206.168.129 --build-arg GOPROXY_LOGIN=$GOPROXY_LOGIN --build-arg GOPROXY_TOKEN=$GOPROXY_TOKEN --build-arg PROJECT_DIR=$CI_PROJECT_DIR --build-arg RELEASE=$RELEASE --build-arg COMMIT=$COMMIT -t $IMAGE_TAG -f ./Dockerfile .
+        - docker push $IMAGE_TAG
+        - docker rmi $IMAGE_TAG
+    tags:
+        - shell-go-runner
+
+deps:
+    extends: .go:base
+    stage: .pre
+    script:
+        - ./run.sh deps
+    except:
+        - tags
+    tags:
+        - docker-go-runner
+    artifacts:
+        expire_in: 1 day
+        paths:
+            - ./pkg
+
+deps-check:
+    extends: .go:base
+    stage: .pre
+    dependencies:
+        - deps
+    script:
+        - mkdir -p ./.bin && wget -q https://github.com/sonatype-nexus-community/nancy/releases/download/v1.0.46/nancy-v1.0.46-linux-amd64 -O ./.bin/nancy && chmod +x ./.bin/nancy
+        - ./run.sh deps_check_pipe
+    except:
+        - tags
+    tags:
+        - docker-go-runner
+
+test:
+    stage: test
+    extends: .go:base
+    dependencies:
+        - deps
+    script:
+        - ./run.sh unit
+    except:
+        - tags
+
+test-coverage:
+    stage: test
+    extends: .go:base
+    dependencies:
+        - deps
+    coverage: '/coverage is enough \d+/'
+    script:
+        - bash ./run.sh unit_coverage
+    except:
+        - tags
+
+test-race:
+    stage: test
+    extends: .go:base
+    dependencies:
+        - deps
+    script:
+        - ./run.sh unit_race
+    except:
+        - tags
+
+build-branch-docker:
+    stage: docker
+    extends: .build-docker:base
+    only:
+        - branches
+    except:
+        - tags
+    when: manual
+
+build-docker:
+    stage: docker
+    extends: .build-docker:base
+
+build-docker-latest-develop:
+    stage: docker
+    variables:
+        IMAGE_TAG: $CI_REGISTRY_IMAGE:latest-develop
+    extends: .build-docker:base
+    allow_failure: false
+    only:
+        variables:
+            - $CI_COMMIT_TAG =~ /^v[0-9]+.[0-9]+.[0-9]+(?:-rc[0-9]+)+$/
+
+build-docker-latest:
+    stage: docker
+    variables:
+        IMAGE_TAG: $CI_REGISTRY_IMAGE:latest
+    extends: .build-docker:base
+    allow_failure: false
+    only:
+        variables:
+            - $CI_COMMIT_TAG =~ /^v[0-9]+.[0-9]+.[0-9]+$/
+
+release:
+    image: node:21-alpine
+    before_script:
+        - |
+            npm install -g semantic-release           \
+            @semantic-release/changelog               \
+            @semantic-release/commit-analyzer         \
+            @semantic-release/exec                    \
+            @semantic-release/git                     \
+            @semantic-release/release-notes-generator \
+            @semantic-release/gitlab
+    stage: release
+    script: >
+        npx semantic-release
+    tags:
+        - docker-go-runner
+    only:
+        - master
+    when: manual
+
+deploy_old_stage:
+    stage: deploy
+    variables:
+        GIT_STRATEGY: clone
+    script:
+        - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
+        - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
+        - helm upgrade --create-namespace --install -n service-develop auth ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+    allow_failure: false
+    tags:
+        - linux-go-runner-git3010p-1
+    only:
+        - /^v\d+.\d+.\d+-rc\d+\z/
+    except:
+        - branches
+    environment: stage
+    when: manual
+
+deploy_kuber_stage:
+    stage: deploy
+    variables:
+        GIT_STRATEGY: clone
+    script:
+        - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
+        - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-develop auth ./ci/helm -f ./ci/helm/helm-values-stage.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+    allow_failure: false
+    tags:
+        - linux-go-runner-git3010p-1
+    only:
+        - /^v\d+.\d+.\d+-rc\d+\z/
+    except:
+        - branches
+    environment: stage
+    when: manual
+
+deploy_cube_prod:
+    stage: deploy
+    variables:
+        GIT_STRATEGY: clone
+    script:
+        - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
+        - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-dev2 upgrade --create-namespace --install -n service-production auth ./ci/helm -f ./ci/helm/helm-values-prod.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+    allow_failure: false
+    tags:
+        - linux-go-runner-git3010p-1
+    only:
+        variables:
+            - $CI_COMMIT_TAG =~ /^v[0-9]+.[0-9]+.[0-9]+$/
+    except:
+        - branches
+    environment: production
+    when: manual
+
+deploy_rancher_prod:
+    stage: deploy
+    variables:
+        GIT_STRATEGY: clone
+    script:
+        - export TAG="$(echo $CI_COMMIT_TAG | sed 's/[/.]/-/g')"
+        - cp $ENV_SECRETS $CI_PROJECT_DIR/ci/helm/env-secret.yaml
+        - helm --kubeconfig=/home/gitlab-runner/.kube/config-rancher upgrade --install -n services auth ./ci/helm -f ./ci/helm/helm-values-rancher.yaml -f ./ci/helm/env-secret.yaml --set=app.tag=$TAG
+    allow_failure: false
+    tags:
+        - linux-go-runner-git3010p-1
+    only:
+        variables:
+            - $CI_COMMIT_TAG =~ /^v[0-9]+.[0-9]+.[0-9]+$/
+    except:
+        - branches
+    environment: rancher
+    when: manual

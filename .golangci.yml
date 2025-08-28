@@ -1,0 +1,54 @@
+run:
+    # The default concurrency value is the number of available CPU.
+    concurrency: 4
+    allow-parallel-runners: false
+    go: '1.22'
+issues:
+    exclude-dirs:
+        - pkg
+        - dev
+    exclude-files:
+        - '.*_test.go'
+linters:
+    enable:
+        - prealloc
+        - dogsled
+        - exportloopref
+        - unconvert
+        - unparam
+        - whitespace
+        - bodyclose
+        - gosec
+        - forcetypeassert
+        - goconst
+        - makezero
+        - sqlclosecheck
+        - errorlint
+        - gocritic
+        - unused
+        - contextcheck
+        - containedctx
+        - errchkjson
+        - errname
+        - funlen
+        - gocheckcompilerdirectives
+        - forbidigo
+        - inamedparam
+        - interfacebloat
+        - perfsprint
+        - prealloc
+        - promlinter
+        - protogetter
+        - rowserrcheck
+        - sqlclosecheck
+        - wrapcheck
+    disable:
+        - testifylint
+linters-settings:
+    gosec:
+        excludes:
+            - G307
+            - G304
+    gocritic:
+        disabled-checks:
+            - ifElseChain

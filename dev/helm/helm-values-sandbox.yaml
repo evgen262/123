@@ -1,0 +1,66 @@
+namespace: sandbox
+
+app:
+  name: auth
+  image: auth
+  tag: latest
+  replicas: 1
+
+resources:
+  limits:
+    cpu: "200m"
+    memory: "500Mi"
+  requests:
+    cpu: "100m"
+    memory: "250Mi"
+
+env_data:
+    - name: LOG_LEVEL
+      value: debug
+    - name: APP_NAME
+      value: auth
+    - name: ENVIRONMENT
+      value: develop
+    - name: DEV_MODE
+      value: true
+    - name: SERVICE_HOST
+      value: 0.0.0.0:8080
+    - name: GRPC_HOST
+      value: 0.0.0.0
+    - name: GRPC_PORT
+      value: 9999
+    - name: REDIS_PORT
+      value: 6379
+    - name: REDIS_DB
+      value: 1
+    - name: EMPLOYEES_ENDPOINT
+      value: employees-sandbox:9999
+
+service:
+  name: auth
+  type: ClusterIP
+  ports:
+      - name: service
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+      - name: grpc
+        port: 9999
+        protocol: TCP
+        targetPort: 9999
+
+ingress:
+    enabled: true
+    name: ingress-auth-sandbox
+    hostname: sandbox-komanda.local
+    rules:
+        - path: /sandbox/service/auth
+          port: 8080
+
+ingress_grpc:
+    enabled: true
+    name: ingress-grpc-auth-sandbox
+    hostname: sandbox-komanda.local
+    rules:
+        - path: /sandbox/grpc/auth
+          port: 9999
